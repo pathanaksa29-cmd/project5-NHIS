@@ -1,70 +1,205 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+import plotly.express as px
 
-# Load your processed data
-df = pd.read_csv("C:/dataset1/final_user_satisfaction.csv")
+# -----------------------------------------------------
+# PAGE CONFIG
+# -----------------------------------------------------
 
-st.title("TellCo Telecom User Analytics Dashboard")
+st.set_page_config(
+    page_title="TellCo Telecom Dashboard",
+    page_icon="📡",
+    layout="wide"
+)
 
-# Sidebar filters
-user_filter = st.sidebar.text_input("Search MSISDN Number")
+# -----------------------------------------------------
+# LOAD DATA
+# -----------------------------------------------------
 
-if user_filter:
-    st.write(df[df['MSISDN_Number'] == user_filter])
-else:
-    st.write(df.head())
+@st.cache_data
+def load_data():
+    feature_store = pd.read_csv("outputs/feature_store.csv")
+    satisfaction = pd.read_csv("outputs/satisfaction_scores.csv")
+    return feature_store, satisfaction
 
-# Tabs for analysis
-tab1, tab2, tab3, tab4 = st.tabs(["User Overview", "Engagement", "Experience", "Satisfaction"])
 
-# ---------------- Tab 1: User Overview ----------------
-with tab1:
-    st.subheader("Top Handsets")
-    top_handsets = df['handset_type'].value_counts().head(10)
-    st.bar_chart(top_handsets)
+feature_store, satisfaction = load_data()
 
-    st.subheader("Handset Distribution Pie Chart")
-    fig, ax = plt.subplots()
-    top_handsets.plot.pie(autopct='%1.1f%%', ax=ax)
-    st.pyplot(fig)
+# -----------------------------------------------------
+# HEADER
+# -----------------------------------------------------
 
-# ---------------- Tab 2: Engagement ----------------
-with tab2:
-    st.subheader("User Engagement Scatterplot")
-    fig, ax = plt.subplots()
-    sns.scatterplot(data=df, x="session_frequency", y="total_traffic_bytes",
-                    hue="satisfaction_cluster", ax=ax)
-    st.pyplot(fig)
+st.title("📡 TellCo Telecom Analytics Dashboard")
+st.caption(
+    "User Overview • Engagement • Experience • Satisfaction"
+)
 
-    st.subheader("Top 10 Engaged Users by Traffic")
-    st.write(df.nlargest(10, "total_traffic_bytes")[["MSISDN_Number","total_traffic_bytes"]])
+st.divider()
 
-# ---------------- Tab 3: Experience ----------------
-with tab3:
-    st.subheader("Experience Metrics by Handset")
-    exp_metrics = df.groupby("handset_type")[["average_throughput_kbps",
-                                              "average_TCP_retransmission_bytes"]].mean()
-    st.write(exp_metrics)
+# -----------------------------------------------------
+# KPI CARDS
+# -----------------------------------------------------
 
-    st.subheader("Throughput Distribution Boxplot")
-    fig, ax = plt.subplots()
-    sns.boxplot(data=df, x="handset_type", y="average_throughput_kbps", ax=ax)
-    plt.xticks(rotation=90)
-    st.pyplot(fig)
+c1, c2, c3, c4 = st.columns(4)
 
-# ---------------- Tab 4: Satisfaction ----------------
-with tab4:
-    st.subheader("Top 10 Satisfied Customers")
-    st.write(df.nlargest(10, "satisfaction_score")[["MSISDN_Number","satisfaction_score"]])
+c1.metric(
+    "Customers",
+    f"{len(feature_store):,}"
+)
 
-    st.subheader("Correlation Heatmap")
-    corr = df[['engagement_score','experience_score','satisfaction_score']].corr()
-    fig, ax = plt.subplots()
-    sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-    st.pyplot(fig)
+c2.metric(
+    "Avg Session Frequency",
+    f"{feature_store['Session_Frequency'].mean():.2f}"
+)
 
-# ---------------- Download Button ----------------
-st.download_button("Download Satisfaction Data", df.to_csv(index=False), "satisfaction.csv")
+c3.metric(
+    "Avg Duration",
+    f"{feature_store['Total_Duration_ms'].mean():,.0f}"
+)
+
+c4.metric(
+    "Avg Traffic",
+    f"{feature_store['Total_Traffic'].mean()/1e6:.2f} MB"
+)
+
+st.divider()
+
+# -----------------------------------------------------
+# APPLICATION TRAFFIC
+# -----------------------------------------------------
+
+applications = [
+    "Gaming",
+    "Youtube",
+    "Netflix",
+    "Google",
+    "Social_Media",
+    "Email",
+    "Other"
+]
+
+application_usage = (
+    feature_store[applications]
+    .sum()
+    .sort_values(ascending=False)
+)
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    fig = px.bar(
+        x=application_usage.index,
+        y=application_usage.values,
+        title="Application Traffic",
+        labels={
+            "x":"Application",
+            "y":"Traffic (Bytes)"
+        }
+    )
+
+    fig.update_layout(height=420)
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+with col2:
+
+    fig = px.histogram(
+        satisfaction,
+        x="Satisfaction_Score",
+        nbins=30,
+        title="Satisfaction Score Distribution"
+    )
+
+    fig.update_layout(height=420)
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+st.divider()
+
+# -----------------------------------------------------
+# CORRELATION MATRIX
+# -----------------------------------------------------
+
+corr_cols = [
+    "Session_Frequency",
+    "Total_Duration_ms",
+    "Total_Traffic",
+    "Gaming",
+    "Youtube",
+    "Netflix",
+    "Google"
+]
+
+corr = feature_store[corr_cols].corr()
+
+fig = px.imshow(
+    corr,
+    text_auto=".2f",
+    color_continuous_scale="RdBu_r",
+    title="Feature Correlation Matrix"
+)
+
+fig.update_layout(height=650)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+st.divider()
+
+# -----------------------------------------------------
+# TOP 10 SATISFIED CUSTOMERS
+# -----------------------------------------------------
+
+top10 = (
+    satisfaction
+    .sort_values(
+        "Satisfaction_Score",
+        ascending=False
+    )
+    .head(10)
+)
+
+fig = px.bar(
+    top10,
+    x="MSISDN/Number",
+    y="Satisfaction_Score",
+    title="Top 10 Satisfied Customers"
+)
+
+fig.update_layout(
+    xaxis_title="Customer ID",
+    yaxis_title="Satisfaction Score",
+    height=500
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+st.divider()
+
+# -----------------------------------------------------
+# DATA PREVIEW
+# -----------------------------------------------------
+
+st.subheader("Feature Store")
+
+st.dataframe(
+    feature_store,
+    use_container_width=True,
+    height=350
+)
+
+st.caption(
+    "Developed using Streamlit, Pandas and Plotly."
+)
